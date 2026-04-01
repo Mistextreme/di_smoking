@@ -1,8 +1,9 @@
 -- ============================================================
 -- di_smoking | server/server.lua
+-- ESX-Legacy Framework
 -- ============================================================
 
-local QBCore = exports['qb-core']:GetCoreObject()
+local ESX = exports['es_extended']:getSharedObject()
 
 -- ============================================================
 -- HELPER: SEND WEBHOOK
@@ -31,8 +32,17 @@ local function NotifyPlayer(source, msg, type)
     if Config.Notify == "ox" then
         TriggerClientEvent('ox_lib:notify', source, { title = msg, type = type or 'inform' })
     else
-        TriggerClientEvent('QBCore:Notify', source, msg, type or 'primary')
+        -- ESX native notification
+        TriggerClientEvent('esx:showNotification', source, msg)
     end
+end
+
+-- ============================================================
+-- HELPER: GET ITEM LABEL (ESX item list lookup with fallback)
+-- ============================================================
+local function GetItemLabel(itemName)
+    local itemList = ESX.GetItemList()
+    return (itemList[itemName] and itemList[itemName].label) or itemName
 end
 
 -- ============================================================
@@ -43,10 +53,10 @@ local function HasItem(source, item, amount)
     if Config.Inventory == "ox" then
         return exports.ox_inventory:Search(source, 'count', item) >= amount
     else
-        local xPlayer = QBCore.Functions.GetPlayer(source)
+        local xPlayer = ESX.GetPlayerFromId(source)
         if not xPlayer then return false end
-        local playerItem = xPlayer.Functions.GetItemByName(item)
-        return playerItem ~= nil and playerItem.amount >= amount
+        local playerItem = xPlayer.getInventoryItem(item)
+        return playerItem ~= nil and playerItem.count >= amount
     end
 end
 
@@ -57,10 +67,9 @@ local function GiveItem(source, item, amount)
     if Config.Inventory == "ox" then
         exports.ox_inventory:AddItem(source, item, amount)
     else
-        local xPlayer = QBCore.Functions.GetPlayer(source)
+        local xPlayer = ESX.GetPlayerFromId(source)
         if not xPlayer then return end
-        xPlayer.Functions.AddItem(item, amount)
-        TriggerClientEvent('inventory:client:ItemBox', source, QBCore.Shared.Items[item], 'add')
+        xPlayer.addInventoryItem(item, amount)
     end
 end
 
@@ -71,13 +80,12 @@ local function RemoveItem(source, item, amount)
     if Config.Inventory == "ox" then
         return exports.ox_inventory:RemoveItem(source, item, amount)
     else
-        local xPlayer = QBCore.Functions.GetPlayer(source)
+        local xPlayer = ESX.GetPlayerFromId(source)
         if not xPlayer then return false end
-        local removed = xPlayer.Functions.RemoveItem(item, amount)
-        if removed then
-            TriggerClientEvent('inventory:client:ItemBox', source, QBCore.Shared.Items[item], 'remove')
-        end
-        return removed
+        local playerItem = xPlayer.getInventoryItem(item)
+        if not playerItem or playerItem.count < amount then return false end
+        xPlayer.removeInventoryItem(item, amount)
+        return true
     end
 end
 
@@ -85,25 +93,20 @@ end
 -- HELPER: MONEY — GET CASH
 -- ============================================================
 local function GetPlayerMoney(source)
-    local xPlayer = QBCore.Functions.GetPlayer(source)
+    local xPlayer = ESX.GetPlayerFromId(source)
     if not xPlayer then return 0 end
-    return xPlayer.Functions.GetMoney('cash')
+    return xPlayer.getMoney()
 end
 
 -- ============================================================
 -- HELPER: MONEY — REMOVE CASH
 -- ============================================================
 local function RemovePlayerMoney(source, amount)
-    local xPlayer = QBCore.Functions.GetPlayer(source)
+    local xPlayer = ESX.GetPlayerFromId(source)
     if not xPlayer then return false end
-    return xPlayer.Functions.RemoveMoney('cash', amount)
-end
-
--- ============================================================
--- HELPER: GET ITEM LABEL (safe fallback)
--- ============================================================
-local function GetItemLabel(itemName)
-    return (QBCore.Shared.Items[itemName] and QBCore.Shared.Items[itemName].label) or itemName
+    if xPlayer.getMoney() < amount then return false end
+    xPlayer.removeMoney(amount)
+    return true
 end
 
 -- ============================================================
@@ -111,7 +114,7 @@ end
 -- ============================================================
 local function RegisterUseableItems()
     if Config.Inventory == "ox" then
-        -- ox_inventory: register a single hook that handles all di_smoking items
+        -- ox_inventory: single hook handles all di_smoking items
         exports.ox_inventory:registerHook('useItem', function(payload)
             local source   = payload.source
             local itemName = payload.item.name
@@ -119,36 +122,37 @@ local function RegisterUseableItems()
             -- Check if it's a box item
             if Config.Boxes[itemName] then
                 TriggerClientEvent('di_smoking:client:openBox', source, itemName)
-                return false -- prevent automatic item removal (handled server-side)
+                return false -- prevent automatic removal (handled server-side)
             end
 
             -- Check if it's a cigarette item
             for boxKey, boxData in pairs(Config.Boxes) do
                 if boxData.consume and boxData.giveItem == itemName then
                     TriggerClientEvent('di_smoking:client:smokeCig', source, boxKey)
-                    return false -- prevent automatic item removal (handled server-side)
+                    return false -- prevent automatic removal (handled server-side)
                 end
             end
         end)
 
     else
-        -- QBCore inventory: register each box and cigarette as a useable item
+        -- ESX inventory: register each box and cigarette via ESX.RegisterUsableItem
         for itemName, boxData in pairs(Config.Boxes) do
-            -- Box item
-            QBCore.Functions.CreateUseableItem(itemName, function(source, item)
-                local xPlayer = QBCore.Functions.GetPlayer(source)
+            -- Register box item
+            local capturedBoxKey = itemName
+            ESX.RegisterUsableItem(capturedBoxKey, function(source)
+                local xPlayer = ESX.GetPlayerFromId(source)
                 if not xPlayer then return end
-                TriggerClientEvent('di_smoking:client:openBox', source, itemName)
+                TriggerClientEvent('di_smoking:client:openBox', source, capturedBoxKey)
             end)
 
-            -- Cigarette item
+            -- Register cigarette item (consumable)
             if boxData.consume and boxData.giveItem then
-                local cigItem = boxData.giveItem
-                local boxKey  = itemName -- capture for closure
-                QBCore.Functions.CreateUseableItem(cigItem, function(source, item)
-                    local xPlayer = QBCore.Functions.GetPlayer(source)
+                local capturedCigItem = boxData.giveItem
+                local capturedBoxRef  = itemName
+                ESX.RegisterUsableItem(capturedCigItem, function(source)
+                    local xPlayer = ESX.GetPlayerFromId(source)
                     if not xPlayer then return end
-                    TriggerClientEvent('di_smoking:client:smokeCig', source, boxKey)
+                    TriggerClientEvent('di_smoking:client:smokeCig', source, capturedBoxRef)
                 end)
             end
         end
@@ -163,22 +167,22 @@ RegisterNetEvent('di_smoking:server:openBox', function(itemName)
     local boxData = Config.Boxes[itemName]
     if not boxData then return end
 
-    local xPlayer = QBCore.Functions.GetPlayer(source)
+    local xPlayer = ESX.GetPlayerFromId(source)
     if not xPlayer then return end
 
-    -- Validate player actually has the box
+    -- Validate player has the box
     if not HasItem(source, itemName, 1) then
         NotifyPlayer(source, 'You do not have this item!', 'error')
         return
     end
 
-    -- Remove the box from inventory
+    -- Remove the box
     if not RemoveItem(source, itemName, 1) then
         NotifyPlayer(source, 'Could not remove item!', 'error')
         return
     end
 
-    -- Give the cigarettes inside the box
+    -- Give the cigarettes
     GiveItem(source, boxData.giveItem, boxData.cigAmount)
     NotifyPlayer(source, 'You received ' .. boxData.cigAmount .. 'x ' .. boxData.label .. '!', 'success')
 
@@ -193,7 +197,6 @@ RegisterNetEvent('di_smoking:server:openBox', function(itemName)
         end
     end
 
-    -- Webhook log
     SendWebhook(
         GetPlayerName(source),
         "Box Opened",
@@ -218,7 +221,7 @@ RegisterNetEvent('di_smoking:server:smokeCig', function(itemName)
         return
     end
 
-    -- Validate lighter (required item)
+    -- Validate required item (lighter)
     if cs.requiredItem and cs.requiredItem ~= "" then
         if not HasItem(source, cs.requiredItem, 1) then
             NotifyPlayer(source, 'You need a ' .. GetItemLabel(cs.requiredItem) .. ' to smoke!', 'error')
@@ -226,18 +229,17 @@ RegisterNetEvent('di_smoking:server:smokeCig', function(itemName)
         end
     end
 
-    -- Remove the consumed cigarette
+    -- Remove the cigarette
     if not RemoveItem(source, cigItem, 1) then
         NotifyPlayer(source, 'Could not remove cigarette!', 'error')
         return
     end
 
-    -- Calculate and apply stress reduction
+    -- Apply stress reduction
     local stressRemove = math.random(cs.stressRemove.min, cs.stressRemove.max)
     TriggerClientEvent(Config.StressEvent, source, -stressRemove)
     NotifyPlayer(source, 'You feel more relaxed after smoking.', 'success')
 
-    -- Webhook log
     SendWebhook(
         GetPlayerName(source),
         "Cigarette Smoked",
@@ -252,14 +254,14 @@ RegisterNetEvent('di_smoking:server:buyItem', function(itemName, clientPrice)
     local source = source
     if not Config.SmokingShop.enabled then return end
 
-    -- Validate item exists in pricing table
+    -- Validate item is in pricing table
     local price = Config.SmokingShop.pricing[itemName]
     if not price then
         NotifyPlayer(source, 'Item not available in shop!', 'error')
         return
     end
 
-    -- Anti-tamper: verify price matches server-side config
+    -- Anti-tamper: server-side price verification
     if price ~= clientPrice then
         NotifyPlayer(source, 'Invalid purchase request!', 'error')
         return
@@ -271,7 +273,7 @@ RegisterNetEvent('di_smoking:server:buyItem', function(itemName, clientPrice)
         return
     end
 
-    -- Remove money and give item
+    -- Deduct money and give item
     if not RemovePlayerMoney(source, price) then
         NotifyPlayer(source, 'Could not process payment!', 'error')
         return
@@ -280,7 +282,6 @@ RegisterNetEvent('di_smoking:server:buyItem', function(itemName, clientPrice)
     GiveItem(source, itemName, 1)
     NotifyPlayer(source, 'You purchased ' .. GetItemLabel(itemName) .. ' for $' .. price .. '!', 'success')
 
-    -- Webhook log
     SendWebhook(
         GetPlayerName(source),
         "Shop Purchase",
@@ -295,14 +296,13 @@ RegisterNetEvent('di_smoking:server:redeemCoupon', function(couponItem)
     local source = source
     if not Config.SmokingShop.enabled then return end
 
-    -- Validate coupon exists in redemption table
     local rewardData = Config.SmokingShop.redemption[couponItem]
     if not rewardData then
         NotifyPlayer(source, 'Invalid coupon!', 'error')
         return
     end
 
-    -- Check player has the coupon
+    -- Validate player has the coupon
     if not HasItem(source, couponItem, 1) then
         NotifyPlayer(source, 'You do not have this coupon!', 'error')
         return
@@ -317,7 +317,6 @@ RegisterNetEvent('di_smoking:server:redeemCoupon', function(couponItem)
     GiveItem(source, rewardData.item, rewardData.amount)
     NotifyPlayer(source, 'Coupon redeemed for ' .. GetItemLabel(rewardData.item) .. '!', 'success')
 
-    -- Webhook log
     SendWebhook(
         GetPlayerName(source),
         "Coupon Redeemed",
@@ -332,5 +331,5 @@ AddEventHandler('onResourceStart', function(resourceName)
     if GetCurrentResourceName() ~= resourceName then return end
     math.randomseed(os.time())
     RegisterUseableItems()
-    print("^2[di_smoking] ^7Server initialized successfully.")
+    print("^2[di_smoking] ^7Server initialized successfully (ESX-Legacy).")
 end)
