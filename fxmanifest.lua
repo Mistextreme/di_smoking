@@ -18,10 +18,10 @@ client_scripts {
 server_scripts {
     'server/server.lua',
     'server/webhook.lua'
-
 }
 
 dependencies {
+    'es_extended',
     'ox_lib'
 }
 
@@ -29,4 +29,3 @@ escrow_ignore {
     'shared/config.lua',
     'server/webhook.lua'
 }
-dependency '/assetpacks'
