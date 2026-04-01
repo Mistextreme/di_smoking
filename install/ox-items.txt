@@ -1,0 +1,82 @@
+-- OX Inventory Items for di_smoking
+-- Add to ox_inventory/data/items.lua
+
+['silver_ember'] = {
+    label = 'Silver Ember Cigarette Box',
+    weight = 100,
+    stack = true,
+    close = true,
+    description = 'A box of Silver Ember cigarettes.'
+},
+
+['royal_drift'] = {
+    label = 'Royal Drift Cigarette Box',
+    weight = 100,
+    stack = true,
+    close = true,
+    description = 'A box of Royal Drift cigarettes.'
+},
+
+['black_velvet'] = {
+    label = 'Black Velvet Cigarette Box',
+    weight = 100,
+    stack = true,
+    close = true,
+    description = 'A box of Black Velvet cigarettes.'
+},
+
+['silver_cigs'] = {
+    label = 'Silver Cigarette',
+    weight = 50,
+    stack = true,
+    close = true,
+    description = 'Feel the buzz of Silver Ember in every puff.'
+},
+
+['royal_cigs'] = {
+	label = 'Royal Drift Cigarette',
+	weight = 50,
+	stack = true,
+	close = true,
+	description = "Experience the royal touch with every drag of Royal Drift",
+},
+
+['black_cigs'] = {
+	label = 'Black Velvet Cigarette',
+	weight = 50,
+	stack = true,
+	close = true,
+	description = "Indulge in the smooth, rich flavor of Black Velvet.",
+},
+
+['lighter'] = {
+    label = 'Lighter',
+    weight = 50,
+    stack = true,
+    close = true,
+    description = 'A lighter for smoking.'
+},
+
+['ember_coupon'] = {
+    label = 'Ember Coupon',
+    weight = 10,
+    stack = true,
+    close = true,
+    description = 'A coupon for Silver Ember.'
+},
+
+['royal_coupon'] = {
+    label = 'Royal Coupon',
+    weight = 10,
+    stack = true,
+    close = true,
+    description = 'A coupon for Royal Drift.'
+},
+
+['velvet_coupon'] = {
+    label = 'Velvet Coupon',
+    weight = 10,
+    stack = true,
+    close = true,
+    description = 'A coupon for Black Velvet.'
+},
