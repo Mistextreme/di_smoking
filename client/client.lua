@@ -3,8 +3,9 @@
 -- ESX-Legacy Framework
 -- ============================================================
 
-local ESX        = exports['es_extended']:getSharedObject()
+local ESX         = exports['es_extended']:getSharedObject()
 local spawnedPeds = {}
+local playerData  = nil  -- local cache; updated via ESX events
 
 -- ============================================================
 -- HELPER: NOTIFY
@@ -13,17 +14,12 @@ local function Notify(msg, type)
     if Config.Notify == "ox" then
         lib.notify({ title = msg, type = type or 'inform' })
     else
-        -- ESX native notification
         ESX.ShowNotification(msg)
     end
 end
 
 -- ============================================================
 -- HELPER: PROGRESS BAR
--- ox_lib is mandatory in this resource (always loaded via fxmanifest).
--- Config.Progressbar "qb" maps to ox_lib on ESX since no QBCore progressbar
--- exists; "ox" uses ox_lib explicitly. Both paths use lib.progressBar.
--- Must be called from within a coroutine/thread (standard for net events).
 -- ============================================================
 local function ProgressBar(label, time, cb)
     if lib.progressBar({
@@ -46,14 +42,12 @@ end
 
 -- ============================================================
 -- HELPER: CLIENT-SIDE HAS ITEM CHECK
--- (Server re-validates — used only to give early feedback.)
 -- ============================================================
 local function HasItem(itemName)
     if Config.Inventory == "ox" then
         return exports.ox_inventory:Search('count', itemName) > 0
     else
-        -- ESX inventory is stored as an array in playerData.inventory
-        local playerData = ESX.GetPlayerData()
+        -- Use local playerData cache
         if not playerData or not playerData.inventory then return false end
         for _, item in ipairs(playerData.inventory) do
             if item.name == itemName and item.count > 0 then
@@ -66,8 +60,6 @@ end
 
 -- ============================================================
 -- HELPER: FORMAT ITEM NAME FOR DISPLAY
--- ESX does not expose a client-side item list, so item names are formatted
--- for readable display in menus (e.g. "silver_ember" → "Silver Ember").
 -- ============================================================
 local function FormatItemLabel(itemName)
     return itemName:gsub("_", " "):gsub("(%a)([%w]*)", function(a, b)
@@ -130,21 +122,17 @@ local function OpenBox(itemName)
 
     local playerPed = PlayerPedId()
 
-    -- Attach box prop before animation
     local boxProp = nil
     if boxData.boxProp then
         local attachConfig = boxData.customAttach or Config.PropAttach
         boxProp = AttachProp(boxData.boxProp, attachConfig.bone, attachConfig.pos, attachConfig.rot)
     end
 
-    -- Play opening animation
     PlayAnimation(boxData.openAnimation)
 
-    -- Build progress label (replace {label} placeholder)
     local label = (Config.ProgressTexts.opening or "Opening..."):gsub("{label}", boxData.label or itemName)
 
     ProgressBar(label, Config.OpenTime, function(success)
-        -- Always stop animation and clean up prop
         ClearPedTasks(playerPed)
         DestroyProp(boxProp)
 
@@ -164,7 +152,6 @@ local function SmokeCig(itemName)
     local cs        = boxData.consumeSettings
     local playerPed = PlayerPedId()
 
-    -- Early lighter check on client (server re-validates before removal)
     if cs.requiredItem and cs.requiredItem ~= "" then
         if not HasItem(cs.requiredItem) then
             Notify('You need a ' .. cs.requiredItem .. ' to smoke!', 'error')
@@ -172,19 +159,16 @@ local function SmokeCig(itemName)
         end
     end
 
-    -- Load and play smoking animation
     RequestAnimDict(cs.animationOptions.dict)
     while not HasAnimDictLoaded(cs.animationOptions.dict) do Wait(100) end
     TaskPlayAnim(playerPed, cs.animationOptions.dict, cs.animationOptions.anim, 8.0, -8.0, -1, 49, 0, false, false, false)
 
-    -- Attach cigarette prop to mouth bone
     local cigProp = nil
     if cs.prop then
         cigProp = AttachProp(cs.prop, cs.attach.bone, cs.attach.pos, cs.attach.rot)
     end
 
     ProgressBar('Smoking...', cs.time, function(success)
-        -- Always stop animation and remove prop
         ClearPedTasksImmediately(playerPed)
         DestroyProp(cigProp)
 
@@ -201,7 +185,6 @@ local function OpenShopMenu(locationIndex)
     local location = Config.SmokingShop.locations[locationIndex]
     if not location then return end
 
-    -- Build buy options
     local buyOptions = {}
     for itemName, price in pairs(Config.SmokingShop.pricing) do
         local itemLabel = FormatItemLabel(itemName)
@@ -214,7 +197,6 @@ local function OpenShopMenu(locationIndex)
         }
     end
 
-    -- Build redeem options
     local redeemOptions = {}
     for couponItem, rewardData in pairs(Config.SmokingShop.redemption) do
         local couponLabel = FormatItemLabel(couponItem)
@@ -228,7 +210,6 @@ local function OpenShopMenu(locationIndex)
         }
     end
 
-    -- Fallback when tables are empty
     if #buyOptions == 0 then
         buyOptions[1] = { title = 'No items available.', disabled = true }
     end
@@ -236,7 +217,6 @@ local function OpenShopMenu(locationIndex)
         redeemOptions[1] = { title = 'No coupons available.', disabled = true }
     end
 
-    -- Register and open menus
     lib.registerContext({
         id      = 'di_smoking_shop',
         title   = '🚬 ' .. location.label,
@@ -310,31 +290,24 @@ end
 
 -- ============================================================
 -- DRAWTEXT ZONE — per-coord proximity loop
--- Uses native help-text display; no external exports required.
 -- ============================================================
 local function StartDrawtextLoop(locationIndex, coords, radius, label)
     CreateThread(function()
-        local inZone = false
         while true do
             local sleep     = 500
             local pedCoords = GetEntityCoords(PlayerPedId())
             local dist      = #(pedCoords - vector3(coords.x, coords.y, coords.z))
 
             if dist < radius then
-                sleep  = 0
-                inZone = true
+                sleep = 0
 
-                -- Display native help text hint
                 BeginTextCommandDisplayHelp("STRING")
                 AddTextComponentSubstringPlayerName("[E] " .. label)
                 EndTextCommandDisplayHelp(0, false, true, -1)
 
-                -- Open shop on E key press
                 if IsControlJustPressed(0, 38) then
                     OpenShopMenu(locationIndex)
                 end
-            else
-                inZone = false
             end
 
             Wait(sleep)
@@ -353,10 +326,8 @@ local function SetupShopLocations()
             local zoneName = ('di_smoking_shop_%d_%d'):format(locationIndex, coordIndex)
             local radius   = location.radius or 2.0
 
-            -- Blip per coord (each coord is a physically separate location)
             CreateShopBlip(coords, location.blip, location.label)
 
-            -- Spawn PED at this coord (if enabled)
             if location.ped and location.ped.enabled then
                 local ped = SpawnPed(location.ped, coords)
                 if ped then
@@ -364,7 +335,6 @@ local function SetupShopLocations()
                 end
             end
 
-            -- Setup interaction zone based on Config.Interaction
             if Config.Interaction == "qb" then
                 exports['qb-target']:AddCircleZone(zoneName, coords, radius, {
                     name      = zoneName,
@@ -402,7 +372,6 @@ local function SetupShopLocations()
                 })
 
             else
-                -- drawtext: proximity loop with native FiveM help text
                 StartDrawtextLoop(locationIndex, coords, radius, location.label)
             end
         end
@@ -413,7 +382,6 @@ end
 -- EVENT HANDLERS
 -- ============================================================
 
--- Triggered by qb-target with { locationIndex = n } data table
 RegisterNetEvent('di_smoking:client:openShop')
 AddEventHandler('di_smoking:client:openShop', function(data)
     if data and data.locationIndex then
@@ -421,34 +389,41 @@ AddEventHandler('di_smoking:client:openShop', function(data)
     end
 end)
 
--- Triggered by server after ESX.RegisterUsableItem fires for a box
 RegisterNetEvent('di_smoking:client:openBox')
 AddEventHandler('di_smoking:client:openBox', function(itemName)
     OpenBox(itemName)
 end)
 
--- Triggered by server after ESX.RegisterUsableItem fires for a cigarette
 RegisterNetEvent('di_smoking:client:smokeCig')
 AddEventHandler('di_smoking:client:smokeCig', function(itemName)
     SmokeCig(itemName)
 end)
 
--- Optional: server can push a notification directly to client
 RegisterNetEvent('di_smoking:client:notify')
 AddEventHandler('di_smoking:client:notify', function(msg, type)
     Notify(msg, type)
 end)
 
 -- ============================================================
--- PLAYER DATA SYNC (ESX)
--- Keep local playerData fresh for HasItem checks
+-- PLAYER DATA SYNC (ESX-Legacy)
+-- esx:playerLoaded passes the ESX client player object.
+-- We call getInventory() to populate our local inventory cache.
+-- esx:onPlayerDataChange fires whenever inventory, money, etc. update.
 -- ============================================================
-AddEventHandler('esx:playerLoaded', function(playerData)
-    ESX.SetPlayerData(playerData)
+AddEventHandler('esx:playerLoaded', function(xPlayer, isNew, skin)
+    -- xPlayer is the ESX client-side player object in ESX-Legacy
+    playerData = xPlayer
+end)
+
+AddEventHandler('esx:onPlayerDataChange', function(key, value)
+    -- Keep our local playerData table in sync for HasItem checks
+    if playerData then
+        playerData[key] = value
+    end
 end)
 
 AddEventHandler('esx:onPlayerLogout', function()
-    -- Clean up state on logout
+    playerData  = nil
     spawnedPeds = {}
 end)
 
@@ -457,7 +432,7 @@ end)
 -- ============================================================
 AddEventHandler('onClientResourceStart', function(resourceName)
     if GetCurrentResourceName() ~= resourceName then return end
-    Wait(1500) -- Allow ESX and world to fully initialize
+    Wait(1500)
     SetupShopLocations()
     print("^2[di_smoking] ^7Client initialized successfully (ESX-Legacy).")
 end)
