@@ -1,0 +1,122 @@
+-- QB-Core Items for di_smoking
+-- Add to qb-core/shared/items.lua
+
+["silver_ember"] = {
+    name = "silver_ember",
+    label = "Silver Ember Cigarette Box",
+    weight = 100,
+    type = "item",
+    image = "silver_ember.png",
+    unique = false,
+    useable = true,
+    shouldClose = true,
+    description = "A box of Silver Ember cigarettes."
+},
+
+["royal_drift"] = {
+    name = "royal_drift",
+    label = "Royal Drift Cigarette Box",
+    weight = 100,
+    type = "item",
+    image = "royal_drift.png",
+    unique = false,
+    useable = true,
+    shouldClose = true,
+    description = "A box of Royal Drift cigarettes."
+},
+
+["black_velvet"] = {
+    name = "black_velvet",
+    label = "Black Velvet Cigarette Box",
+    weight = 100,
+    type = "item",
+    image = "black_velvet.png",
+    unique = false,
+    useable = true,
+    shouldClose = true,
+    description = "A box of Black Velvet cigarettes."
+},
+
+["silver_cigs"] = {
+    name = "silver_cigs",
+    label = "Silver Cigarette",
+    weight = 50,
+    type = "item",
+    image = "cigs.png",
+    unique = false,
+    useable = true,
+    shouldClose = true,
+    description = "Feel the buzz of Silver Ember in every puff."
+},
+
+["royal_cigs"] = {
+    name = "royal_cigs",
+    label = "Royal Cigarette",
+    weight = 50,
+    type = "item",
+    image = "cigs.png",
+    unique = false,
+    useable = true,
+    shouldClose = true,
+    description = "Experience the royal touch with every drag of Royal Drift."
+},
+
+["black_cigs"] = {
+    name = "black_cigs",
+    label = "Velvet Cigarette",
+    weight = 50,
+    type = "item",
+    image = "cigs.png",
+    unique = false,
+    useable = true,
+    shouldClose = true,
+    description = "Indulge in the smooth, rich flavor of Black Velvet."
+},
+
+["lighter"] = {
+    name = "lighter",
+    label = "Lighter",
+    weight = 50,
+    type = "item",
+    image = "lighter.png",
+    unique = false,
+    useable = false,
+    shouldClose = true,
+    description = "A lighter for smoking."
+},
+
+["ember_coupon"] = {
+    name = "ember_coupon",
+    label = "Ember Coupon",
+    weight = 10,
+    type = "item",
+    image = "ember_coupon.png",
+    unique = false,
+    useable = false,
+    shouldClose = true,
+    description = "A coupon for Silver Ember."
+},
+
+["royal_coupon"] = {
+    name = "royal_coupon",
+    label = "Royal Coupon",
+    weight = 10,
+    type = "item",
+    image = "royal_coupon.png",
+    unique = false,
+    useable = false,
+    shouldClose = true,
+    description = "A coupon for Royal Drift."
+},
+
+["velvet_coupon"] = {
+    name = "velvet_coupon",
+    label = "Velvet Coupon",
+    weight = 10,
+    type = "item",
+    image = "velvet_coupon.png",
+    unique = false,
+    useable = false,
+    shouldClose = true,
+    description = "A coupon for Black Velvet."
+},
