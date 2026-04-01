@@ -1,8 +1,9 @@
 -- ============================================================
 -- di_smoking | client/client.lua
+-- ESX-Legacy Framework
 -- ============================================================
 
-local QBCore     = exports['qb-core']:GetCoreObject()
+local ESX        = exports['es_extended']:getSharedObject()
 local spawnedPeds = {}
 
 -- ============================================================
@@ -12,65 +13,66 @@ local function Notify(msg, type)
     if Config.Notify == "ox" then
         lib.notify({ title = msg, type = type or 'inform' })
     else
-        QBCore.Functions.Notify(msg, type or 'primary')
+        -- ESX native notification
+        ESX.ShowNotification(msg)
     end
 end
 
 -- ============================================================
 -- HELPER: PROGRESS BAR
--- Unified callback-style wrapper for both qb and ox progressbars.
+-- ox_lib is mandatory in this resource (always loaded via fxmanifest).
+-- Config.Progressbar "qb" maps to ox_lib on ESX since no QBCore progressbar
+-- exists; "ox" uses ox_lib explicitly. Both paths use lib.progressBar.
 -- Must be called from within a coroutine/thread (standard for net events).
 -- ============================================================
 local function ProgressBar(label, time, cb)
-    if Config.Progressbar == "ox" then
-        -- lib.progressBar blocks the current coroutine and returns bool
-        if lib.progressBar({
-            duration      = time,
-            label         = label,
-            useWhileDead  = false,
-            canCancel     = false,
-            disable       = {
-                move    = true,
-                car     = false,
-                combat  = true,
-                mouse   = false,
-            },
-        }) then
-            cb(true)
-        else
-            cb(false)
-        end
+    if lib.progressBar({
+        duration      = time,
+        label         = label,
+        useWhileDead  = false,
+        canCancel     = false,
+        disable       = {
+            move   = true,
+            car    = false,
+            combat = true,
+            mouse  = false,
+        },
+    }) then
+        cb(true)
     else
-        QBCore.Functions.Progressbar('di_smoking_action', label, time, false, true, {
-            disableMovement    = true,
-            disableCarMovement = false,
-            disableMouse       = false,
-            disableCombat      = true,
-        }, {}, {}, {}, function()
-            cb(true)
-        end, function()
-            cb(false)
-        end)
+        cb(false)
     end
 end
 
 -- ============================================================
 -- HELPER: CLIENT-SIDE HAS ITEM CHECK
--- (Server re-validates — this is only used to give early feedback.)
+-- (Server re-validates — used only to give early feedback.)
 -- ============================================================
 local function HasItem(itemName)
     if Config.Inventory == "ox" then
         return exports.ox_inventory:Search('count', itemName) > 0
     else
-        local items = QBCore.Functions.GetPlayerData().items
-        if not items then return false end
-        for _, item in pairs(items) do
-            if item and item.name == itemName then
+        -- ESX inventory is stored as an array in playerData.inventory
+        local playerData = ESX.GetPlayerData()
+        if not playerData or not playerData.inventory then return false end
+        for _, item in ipairs(playerData.inventory) do
+            if item.name == itemName and item.count > 0 then
                 return true
             end
         end
         return false
     end
+end
+
+-- ============================================================
+-- HELPER: FORMAT ITEM NAME FOR DISPLAY
+-- ESX does not expose a client-side item list, so item names are formatted
+-- for readable display in menus (e.g. "silver_ember" → "Silver Ember").
+-- ============================================================
+local function FormatItemLabel(itemName)
+    return itemName:gsub("_", " "):gsub("(%a)([%w]*)", function(a, b)
+        return a:upper() .. b:lower()
+    end)
 end
 
 -- ============================================================
@@ -202,7 +204,7 @@ local function OpenShopMenu(locationIndex)
     -- Build buy options
     local buyOptions = {}
     for itemName, price in pairs(Config.SmokingShop.pricing) do
-        local itemLabel = (QBCore.Shared.Items[itemName] and QBCore.Shared.Items[itemName].label) or itemName
+        local itemLabel = FormatItemLabel(itemName)
         buyOptions[#buyOptions + 1] = {
             title       = itemLabel,
             description = 'Price: $' .. price,
@@ -215,8 +217,8 @@ local function OpenShopMenu(locationIndex)
     -- Build redeem options
     local redeemOptions = {}
     for couponItem, rewardData in pairs(Config.SmokingShop.redemption) do
-        local couponLabel = (QBCore.Shared.Items[couponItem] and QBCore.Shared.Items[couponItem].label) or couponItem
-        local rewardLabel = (QBCore.Shared.Items[rewardData.item] and QBCore.Shared.Items[rewardData.item].label) or rewardData.item
+        local couponLabel = FormatItemLabel(couponItem)
+        local rewardLabel = FormatItemLabel(rewardData.item)
         redeemOptions[#redeemOptions + 1] = {
             title       = couponLabel,
             description = 'Exchange for: ' .. rewardLabel,
@@ -234,7 +236,7 @@ local function OpenShopMenu(locationIndex)
         redeemOptions[1] = { title = 'No coupons available.', disabled = true }
     end
 
-    -- Register menus
+    -- Register and open menus
     lib.registerContext({
         id      = 'di_smoking_shop',
         title   = '🚬 ' .. location.label,
@@ -314,9 +316,9 @@ local function StartDrawtextLoop(locationIndex, coords, radius, label)
     CreateThread(function()
         local inZone = false
         while true do
-            local sleep      = 500
-            local pedCoords  = GetEntityCoords(PlayerPedId())
-            local dist       = #(pedCoords - vector3(coords.x, coords.y, coords.z))
+            local sleep     = 500
+            local pedCoords = GetEntityCoords(PlayerPedId())
+            local dist      = #(pedCoords - vector3(coords.x, coords.y, coords.z))
 
             if dist < radius then
                 sleep  = 0
@@ -351,7 +353,7 @@ local function SetupShopLocations()
             local zoneName = ('di_smoking_shop_%d_%d'):format(locationIndex, coordIndex)
             local radius   = location.radius or 2.0
 
-            -- Blip at every coord (coords are physically separate locations)
+            -- Blip per coord (each coord is a physically separate location)
             CreateShopBlip(coords, location.blip, location.label)
 
             -- Spawn PED at this coord (if enabled)
@@ -362,7 +364,7 @@ local function SetupShopLocations()
                 end
             end
 
-            -- Register interaction zone based on Config.Interaction
+            -- Setup interaction zone based on Config.Interaction
             if Config.Interaction == "qb" then
                 exports['qb-target']:AddCircleZone(zoneName, coords, radius, {
                     name      = zoneName,
@@ -400,7 +402,7 @@ local function SetupShopLocations()
                 })
 
             else
-                -- drawtext: key-E proximity loop with native help text
+                -- drawtext: proximity loop with native FiveM help text
                 StartDrawtextLoop(locationIndex, coords, radius, location.label)
             end
         end
@@ -411,7 +413,7 @@ end
 -- EVENT HANDLERS
 -- ============================================================
 
--- qb-target triggers this with { locationIndex = n } as data
+-- Triggered by qb-target with { locationIndex = n } data table
 RegisterNetEvent('di_smoking:client:openShop')
 AddEventHandler('di_smoking:client:openShop', function(data)
     if data and data.locationIndex then
@@ -419,22 +421,35 @@ AddEventHandler('di_smoking:client:openShop', function(data)
     end
 end)
 
--- Server triggers openBox after useable item is registered
+-- Triggered by server after ESX.RegisterUsableItem fires for a box
 RegisterNetEvent('di_smoking:client:openBox')
 AddEventHandler('di_smoking:client:openBox', function(itemName)
     OpenBox(itemName)
 end)
 
--- Server triggers smokeCig after useable cigarette item is registered
+-- Triggered by server after ESX.RegisterUsableItem fires for a cigarette
 RegisterNetEvent('di_smoking:client:smokeCig')
 AddEventHandler('di_smoking:client:smokeCig', function(itemName)
     SmokeCig(itemName)
 end)
 
--- Optional: server can push notifications to client directly
+-- Optional: server can push a notification directly to client
 RegisterNetEvent('di_smoking:client:notify')
 AddEventHandler('di_smoking:client:notify', function(msg, type)
     Notify(msg, type)
+end)
+
+-- ============================================================
+-- PLAYER DATA SYNC (ESX)
+-- Keep local playerData fresh for HasItem checks
+-- ============================================================
+AddEventHandler('esx:playerLoaded', function(playerData)
+    ESX.SetPlayerData(playerData)
+end)
+
+AddEventHandler('esx:onPlayerLogout', function()
+    -- Clean up state on logout
+    spawnedPeds = {}
 end)
 
 -- ============================================================
@@ -442,7 +457,7 @@ end)
 -- ============================================================
 AddEventHandler('onClientResourceStart', function(resourceName)
     if GetCurrentResourceName() ~= resourceName then return end
-    Wait(1500) -- Allow world and framework to fully initialize
+    Wait(1500) -- Allow ESX and world to fully initialize
     SetupShopLocations()
-    print("^2[di_smoking] ^7Client initialized successfully.")
+    print("^2[di_smoking] ^7Client initialized successfully (ESX-Legacy).")
 end)
